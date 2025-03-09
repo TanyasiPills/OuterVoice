@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using OWML.Common;
@@ -18,6 +19,17 @@ namespace OuterVoice
 
         private bool playerInGame = false;
 
+        private float[] data;
+        private int freq = 44100;
+        private AudioClip clip;
+        [SerializeField] private string mic;
+
+        Dictionary<uint, AudioSource> audioSources;
+
+        uint myId = 999;
+
+        bool gotId = false;
+
         public void Awake(){Instance = this;}
 
         public void Start()
@@ -25,17 +37,49 @@ namespace OuterVoice
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
             ModHelper.Console.WriteLine($"Swompy mompy, {nameof(OuterVoice)} is loaded!", MessageType.Success);
 
-            LoadAudio("Assets/audio/whisle.mp3");
-
             new Harmony("Maychii.OuterVoice").PatchAll(Assembly.GetExecutingAssembly());
 
             OnCompleteSceneLoad(OWScene.TitleScreen, OWScene.TitleScreen);
             LoadManager.OnCompleteSceneLoad += OnCompleteSceneLoad;
+
+            buddyApi.RegisterHandler<AudioClip>("voice", GetVoice);
+
+            mic = Microphone.devices[0];
+            StartCoroutine(Record());
         }
 
-        private void LoadAudio(string path)
+        private IEnumerator Record()
         {
-            audioClip = ModHelper.Assets.GetAudio(path);
+            clip = Microphone.Start(mic, true, 999, freq);
+            data = new float[freq];
+
+            while (Microphone.GetPosition(mic) < 0) yield return null;
+
+            while (true)
+            {
+                yield return new WaitForSeconds(1);
+                int pos = Microphone.GetPosition(mic);
+                if (pos < freq) continue;
+                clip.GetData(data, pos - freq);
+
+                AudioClip clipToSend = AudioClip.Create("clipike", data.Length, 1, 44100, false);
+                clipToSend.SetData(data, 0);
+                SendVoice(clipToSend);
+            }
+
+        }
+
+        private void SendVoice(AudioClip clip)
+        {
+            buddyApi.SendMessage("voice", clip);
+            ModHelper.Console.WriteLine($"Voice sent");
+        }
+
+        private void GetVoice(uint sender, AudioClip clip)
+        {
+            audioSources[sender].clip = clip;
+            audioSources[sender].Play();
+            ModHelper.Console.WriteLine($"Playing voice from player {sender}");
         }
 
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
@@ -51,58 +95,29 @@ namespace OuterVoice
 
         private void PlayerJoined(uint playerID)
         {
-            playerInGame = true;
-            //StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
-        }
-
-        private void Update()
-        {
-            if (playerInGame)
+            if (buddyApi.GetLocalPlayerID() == playerID)
             {
-                if (Keyboard.current[Key.J].wasPressedThisFrame)
+                myId = playerID;
+                gotId = true;
+                uint[] ids = buddyApi.GetPlayerIDs();
+                foreach (uint id in ids)
                 {
-                    ModHelper.Console.WriteLine("SUCK MY DIIIIIICCCKKKK");
-                    RaycastFromCamera();
+                    if(id != playerID) StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
                 }
             }
-        }
-
-        private void RaycastFromCamera()
-        {
-            Ray ray = new Ray(camera.transform.position, camera.transform.forward);
-            RaycastHit hit;
-
-            if(Physics.Raycast(ray, out hit, 100f))
+            else
             {
-                ModHelper.Console.WriteLine("collision detected at position: " + hit.point.ToString());
-                Transform parent = hit.transform;
-                SpawnAudioPlayer(hit.point, parent);
+                StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
             }
+            ModHelper.Console.WriteLine($"Player id: {playerID}");
+
         }
-
-        private void SpawnAudioPlayer(Vector3 positionIn, Transform parentIn)
-        {
-            GameObject audioplayer = new GameObject("AudioPlayer");
-            audioplayer.transform.SetParent(parentIn);
-            audioplayer.transform.position = positionIn;
-            AudioSource audioSource = audioplayer.AddComponent<AudioSource>();
-            audioSource.clip = audioClip;
-            audioSource.playOnAwake = false;
-            audioSource.loop = true;
-            audioSource.spatialBlend = 1f;
-            audioSource.volume = 0.5f;
-            audioSource.maxDistance = 50f;
-
-
-
-            audioSource.Play();
-        }
-        /*
+        
         private IEnumerator WaitForPlayerAndSetupAudio(uint id)
         {
             while (!buddyApi.GetPlayerReady(id))
             {
-                ModHelper.Console.WriteLine("Waiting for player to be ready...", MessageType.Info);
+                ModHelper.Console.WriteLine($"Waiting for player[{id}] to be ready...", MessageType.Info);
                 yield return new WaitForSeconds(0.5f);
             }
             GameObject player = buddyApi.GetPlayerBody(id);
@@ -112,34 +127,19 @@ namespace OuterVoice
                 yield break;
             }
 
-            _audioSource = player.GetComponent<AudioSource>();
-            if (_audioSource == null)
+            AudioSource souce = player.GetComponent<AudioSource>();
+            if (souce == null)
             {
-                _audioSource = player.AddComponent<AudioSource>();
+                souce = player.AddComponent<AudioSource>();
             }
 
-            _audioSource.playOnAwake = false;
-            _audioSource.loop = true;
-            _audioSource.spatialBlend = 1f;
-            _audioSource.volume = 0.5f;
+            souce.playOnAwake = false;
+            souce.loop = false;
+            souce.spatialBlend = 1f;
+            souce.volume = 1f;
+            souce.maxDistance = 100f;
 
-            
-        }
-
-        private void LoadAndPlayAudio(string path)
-        {
-            
-            if (_customClip == null)
-            {
-                ModHelper.Console.WriteLine("Failed to load audio: " + path, MessageType.Error);
-                return;
-            }
-
-            _audioSource.clip = _customClip;
-            _audioSource.Play();
-
-            ModHelper.Console.WriteLine("Playing custom sound!", MessageType.Success);
-        }
-        */
+            audioSources[id] = souce;
+        }      
     }
 }
