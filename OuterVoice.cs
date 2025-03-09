@@ -4,6 +4,7 @@ using HarmonyLib;
 using OWML.Common;
 using OWML.ModHelper;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace OuterVoice
 {
@@ -12,8 +13,8 @@ namespace OuterVoice
         public static OuterVoice Instance;
         public static IQSBAPI buddyApi;
 
-        private AudioSource _audioSource;
-        private AudioClip _customClip;
+        private AudioClip audioClip;
+        private Camera camera;
 
         private bool playerInGame = false;
 
@@ -22,47 +23,81 @@ namespace OuterVoice
         public void Start()
         {
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
-            // Starting here, you'll have access to OWML's mod helper.
-            ModHelper.Console.WriteLine($"My mod {nameof(OuterVoice)} is loaded!", MessageType.Success);
+            ModHelper.Console.WriteLine($"Swompy mompy, {nameof(OuterVoice)} is loaded!", MessageType.Success);
+
+            LoadAudio("Assets/audio/whisle.mp3");
 
             new Harmony("Maychii.OuterVoice").PatchAll(Assembly.GetExecutingAssembly());
 
-            // Example of accessing game code.
-            OnCompleteSceneLoad(OWScene.TitleScreen, OWScene.TitleScreen); // We start on title screen
+            OnCompleteSceneLoad(OWScene.TitleScreen, OWScene.TitleScreen);
             LoadManager.OnCompleteSceneLoad += OnCompleteSceneLoad;
+        }
+
+        private void LoadAudio(string path)
+        {
+            audioClip = ModHelper.Assets.GetAudio(path);
         }
 
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
         {
             if (newScene != OWScene.SolarSystem) return;
 
+            camera = Camera.main;
+
             ModHelper.Console.WriteLine("Loaded into solar system!", MessageType.Success);
-            buddyApi.OnPlayerJoin().AddListener(AudioPlayer);
+            buddyApi.OnPlayerJoin().AddListener(PlayerJoined);
             
         }
 
-        private void AudioPlayer(uint playerID)
+        private void PlayerJoined(uint playerID)
         {
             playerInGame = true;
-            StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
+            //StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
         }
 
         private void Update()
         {
-            if(playerInGame)
+            if (playerInGame)
             {
-                if (Input.GetKeyUp(KeyCode.J))
+                if (Keyboard.current[Key.J].wasPressedThisFrame)
                 {
-                    SpawnAudioPlayer();
+                    ModHelper.Console.WriteLine("SUCK MY DIIIIIICCCKKKK");
+                    RaycastFromCamera();
                 }
             }
         }
 
-        private void SpawnAudioPlayer()
+        private void RaycastFromCamera()
         {
+            Ray ray = new Ray(camera.transform.position, camera.transform.forward);
+            RaycastHit hit;
 
+            if(Physics.Raycast(ray, out hit, 100f))
+            {
+                ModHelper.Console.WriteLine("collision detected at position: " + hit.point.ToString());
+                Transform parent = hit.transform;
+                SpawnAudioPlayer(hit.point, parent);
+            }
         }
 
+        private void SpawnAudioPlayer(Vector3 positionIn, Transform parentIn)
+        {
+            GameObject audioplayer = new GameObject("AudioPlayer");
+            audioplayer.transform.SetParent(parentIn);
+            audioplayer.transform.position = positionIn;
+            AudioSource audioSource = audioplayer.AddComponent<AudioSource>();
+            audioSource.clip = audioClip;
+            audioSource.playOnAwake = false;
+            audioSource.loop = true;
+            audioSource.spatialBlend = 1f;
+            audioSource.volume = 0.5f;
+            audioSource.maxDistance = 50f;
+
+
+
+            audioSource.Play();
+        }
+        /*
         private IEnumerator WaitForPlayerAndSetupAudio(uint id)
         {
             while (!buddyApi.GetPlayerReady(id))
@@ -88,12 +123,12 @@ namespace OuterVoice
             _audioSource.spatialBlend = 1f;
             _audioSource.volume = 0.5f;
 
-            LoadAndPlayAudio("Assets/audio/whisle.mp3");
+            
         }
 
         private void LoadAndPlayAudio(string path)
         {
-            _customClip = ModHelper.Assets.GetAudio(path);
+            
             if (_customClip == null)
             {
                 ModHelper.Console.WriteLine("Failed to load audio: " + path, MessageType.Error);
@@ -105,5 +140,6 @@ namespace OuterVoice
 
             ModHelper.Console.WriteLine("Playing custom sound!", MessageType.Success);
         }
+        */
     }
 }
