@@ -17,8 +17,6 @@ namespace OuterVoice
 
         private AudioClip audioClip;
 
-        private bool playerInGame = false;
-
         private float[] data;
         private int freq = 16384;
         private int chunkSize = 1024;
@@ -53,12 +51,10 @@ namespace OuterVoice
             while (Microphone.GetPosition(mic) < 0) yield return null;
 
             int lastPos = 0;
-            float nextUpdateTime = Time.time + 0.008333f;
 
             while (true)
             {
-                if (Time.time >= nextUpdateTime)
-                {
+                yield return new WaitForSeconds(0.1f);
                     int pos = Microphone.GetPosition(mic);
                     if (pos >= chunkSize && pos != lastPos)
                     {
@@ -71,9 +67,6 @@ namespace OuterVoice
 
                         lastPos = pos;
                     }
-
-                    nextUpdateTime = Time.time + 0.008333f;
-                }
             }
 
         }
@@ -126,23 +119,26 @@ namespace OuterVoice
             if (newScene != OWScene.SolarSystem) return;
 
             ModHelper.Console.WriteLine("Loaded into solar system!", MessageType.Success);
-            buddyApi.OnPlayerJoin().AddListener(PlayerJoined);
-
             if (buddyApi.GetIsHost())
             {
                 myId = 1;
                 ModHelper.Console.WriteLine($"joined as host", MessageType.Success);
-                StartCoroutine(Record());
-                buddyApi.RegisterHandler<float[]>("voice", GetVoice);
             }
             else StartCoroutine(WaitForLocalPlayerInitialization());
-           
+
+
+            buddyApi.OnPlayerJoin().AddListener(PlayerJoined);
 
             ModHelper.Console.WriteLine($"yam", MessageType.Success);
             uint[] ids = buddyApi.GetPlayerIDs();
             foreach (uint id in ids)
             {
                 if (id != myId) StartCoroutine(WaitForPlayerAndSetupAudio(id));
+            }
+            if (buddyApi.GetIsHost())
+            {
+                StartCoroutine(Record());
+                buddyApi.RegisterHandler<float[]>("voice", GetVoice);
             }
         }
 
@@ -169,6 +165,7 @@ namespace OuterVoice
 
         private void PlayerJoined(uint playerID)
         {
+            if (playerID == 1) return;
             StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
             ModHelper.Console.WriteLine($"Player id: {playerID}");
         }
