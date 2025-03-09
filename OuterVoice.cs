@@ -20,7 +20,8 @@ namespace OuterVoice
         private bool playerInGame = false;
 
         private float[] data;
-        private int freq = 44100;
+        private int freq = 16384;
+        private int chunkSize = 1024;
         private AudioClip clip;
         [SerializeField] private string mic;
 
@@ -52,17 +53,27 @@ namespace OuterVoice
             while (Microphone.GetPosition(mic) < 0) yield return null;
 
             int lastPos = 0;
+            float nextUpdateTime = Time.time + 0.008333f;
 
             while (true)
             {
-                yield return new WaitForSeconds(0.008333f);
-                int pos = Microphone.GetPosition(mic);
-                if (pos < freq || pos == lastPos) continue;
-                clip.GetData(data, pos - freq);
+                if (Time.time >= nextUpdateTime)
+                {
+                    int pos = Microphone.GetPosition(mic);
+                    if (pos >= chunkSize && pos != lastPos)
+                    {
+                        clip.GetData(data, pos - chunkSize);
 
-                SendVoice(data);
+                        float[] chunkData = new float[chunkSize];
+                        Array.Copy(data, chunkData, chunkSize);
 
-                lastPos = pos;
+                        SendVoice(chunkData);
+
+                        lastPos = pos;
+                    }
+
+                    nextUpdateTime = Time.time + 0.008333f;
+                }
             }
 
         }
@@ -117,7 +128,15 @@ namespace OuterVoice
             ModHelper.Console.WriteLine("Loaded into solar system!", MessageType.Success);
             buddyApi.OnPlayerJoin().AddListener(PlayerJoined);
 
-            myId = buddyApi.GetLocalPlayerID();
+            if (buddyApi.GetIsHost())
+            {
+                myId = 1;
+                ModHelper.Console.WriteLine($"joined as host", MessageType.Success);
+                StartCoroutine(Record());
+                buddyApi.RegisterHandler<float[]>("voice", GetVoice);
+            }
+            else StartCoroutine(WaitForLocalPlayerInitialization());
+           
 
             ModHelper.Console.WriteLine($"yam", MessageType.Success);
             uint[] ids = buddyApi.GetPlayerIDs();
@@ -125,8 +144,25 @@ namespace OuterVoice
             {
                 if (id != myId) StartCoroutine(WaitForPlayerAndSetupAudio(id));
             }
+        }
+
+        private IEnumerator WaitForLocalPlayerInitialization()
+        {
+            while (buddyApi.GetLocalPlayerID() == 0)
+            {
+                yield return null;
+            }
+
+            myId = buddyApi.GetLocalPlayerID();
+            ModHelper.Console.WriteLine($"Local player initialized with ID: {myId}", MessageType.Success);
+
+            while (!buddyApi.GetPlayerReady(myId))
+            {
+                ModHelper.Console.WriteLine($"Waiting for myself to be ready...", MessageType.Info);
+                yield return new WaitForSeconds(0.5f);
+            }
+
             ModHelper.Console.WriteLine($"joined as: {myId}");
-            buddyApi.GetPlayerReady(myId);
             StartCoroutine(Record());
             buddyApi.RegisterHandler<float[]>("voice", GetVoice);
         }
