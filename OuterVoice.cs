@@ -27,6 +27,8 @@ namespace OuterVoice
 
         uint myId = 999;
 
+        private Dictionary<uint, Queue<float>> voiceBuffers = new Dictionary<uint, Queue<float>>();
+
         public void Awake(){Instance = this;}
 
         public void Start()
@@ -85,33 +87,37 @@ namespace OuterVoice
 
         private void GetVoice(uint sender, float[] data)
         {
-            if (audioSources.ContainsKey(sender))
+            if (!voiceBuffers.ContainsKey(sender))
+                voiceBuffers[sender] = new Queue<float>();
+
+            foreach (float sample in data) voiceBuffers[sender].Enqueue(sample);
+
+            if (!audioSources.ContainsKey(sender))
             {
-                AudioSource source = audioSources[sender];
-                if (source.clip == null)
-                {
-                    AudioClip clipToPlay = AudioClip.Create("clipike", data.Length, 1, 44100, false);
-                    clipToPlay.SetData(data, 0);
-                    audioSources[sender].clip = clipToPlay;
-                }
-                else
-                {
-                    int currentPos = source.timeSamples;
-                    float[] newClipData = new float[source.clip.samples + data.Length];
-                    source.clip.GetData(newClipData, 0);
-                    Array.Copy(data, 0, newClipData, currentPos, data.Length);
-                    source.clip.SetData(newClipData, 0);
-                }
-                if (!source.isPlaying)
-                {
-                    source.Play();
-                }
+                ModHelper.Console.WriteLine($"Audio source for player {sender} is not initialized!", MessageType.Error);
+                return;
+            }
+
+            AudioSource source = audioSources[sender];
+
+            if (source.clip == null)
+            {
+                AudioClip clipToPlay = AudioClip.Create("clipike", data.Length, 1, 16384, false);
+                clipToPlay.SetData(data, 0);
+                source.clip = clipToPlay;
             }
             else
             {
-                ModHelper.Console.WriteLine($"Audio source for player {sender} is not initialized!", MessageType.Error);
+                int currentPos = source.timeSamples;
+                float[] newClipData = new float[source.clip.samples + data.Length];
+
+                source.clip.GetData(newClipData, 0);
+                Array.Copy(data, 0, newClipData, currentPos, data.Length);
+
+                source.clip.SetData(newClipData, 0);
             }
 
+            if (!source.isPlaying) source.Play();
         }
 
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
