@@ -50,7 +50,7 @@ namespace OuterVoice
 
         private IEnumerator Record()
         {
-            clip = Microphone.Start(mic, true, 1, freq);
+            clip = Microphone.Start(mic, true, 999, freq);
             data = new float[freq];
 
             while (Microphone.GetPosition(mic) < 0) yield return null;
