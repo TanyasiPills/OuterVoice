@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using OWML.Common;
@@ -18,8 +19,9 @@ namespace OuterVoice
         private AudioClip audioClip;
 
         private float[] data;
-        private int freq = 16384;
-        private int chunkSize = 1024;
+        private int freq = 8192*2;
+        private int chunkSize = 4096;
+        private int sendSize = 8192 / 10;
         private AudioClip clip;
         [SerializeField] private string mic;
 
@@ -28,6 +30,7 @@ namespace OuterVoice
         uint myId = 999;
 
         private Dictionary<uint, Queue<float>> voiceBuffers = new Dictionary<uint, Queue<float>>();
+        private Queue<AudioClip> toPlay = new Queue<AudioClip>();
 
         public void Awake(){Instance = this;}
 
@@ -47,7 +50,7 @@ namespace OuterVoice
 
         private IEnumerator Record()
         {
-            clip = Microphone.Start(mic, true, 999, freq);
+            clip = Microphone.Start(mic, true, 1, freq);
             data = new float[freq];
 
             while (Microphone.GetPosition(mic) < 0) yield return null;
@@ -56,19 +59,19 @@ namespace OuterVoice
 
             while (true)
             {
-                yield return new WaitForSeconds(0.1f);
-                    int pos = Microphone.GetPosition(mic);
-                    if (pos >= chunkSize && pos != lastPos)
-                    {
-                        clip.GetData(data, pos - chunkSize);
+                yield return new WaitForSeconds(0.05f);
+                int pos = Microphone.GetPosition(mic);
+                if (pos >= sendSize && pos != lastPos)
+                {
+                    clip.GetData(data, pos - sendSize);
 
-                        float[] chunkData = new float[chunkSize];
-                        Array.Copy(data, chunkData, chunkSize);
+                    float[] chunkData = new float[sendSize];
+                    Array.Copy(data, chunkData, sendSize);
 
-                        SendVoice(chunkData);
+                    SendVoice(chunkData);
 
-                        lastPos = pos;
-                    }
+                    lastPos = pos;
+                }
             }
 
         }
@@ -90,7 +93,8 @@ namespace OuterVoice
             if (!voiceBuffers.ContainsKey(sender))
                 voiceBuffers[sender] = new Queue<float>();
 
-            foreach (float sample in data) voiceBuffers[sender].Enqueue(sample);
+
+            voiceBuffers[sender] = new Queue<float>(voiceBuffers[sender].Concat(data));
 
             if (!audioSources.ContainsKey(sender))
             {
@@ -100,24 +104,21 @@ namespace OuterVoice
 
             AudioSource source = audioSources[sender];
 
-            if (source.clip == null)
+            if(voiceBuffers[sender].Count > chunkSize)
             {
-                AudioClip clipToPlay = AudioClip.Create("clipike", data.Length, 1, 16384, false);
-                clipToPlay.SetData(data, 0);
-                source.clip = clipToPlay;
-            }
-            else
-            {
-                int currentPos = source.timeSamples;
-                float[] newClipData = new float[source.clip.samples + data.Length];
-
-                source.clip.GetData(newClipData, 0);
-                Array.Copy(data, 0, newClipData, currentPos, data.Length);
-
-                source.clip.SetData(newClipData, 0);
+                float[] toVoice = voiceBuffers[sender].Take(chunkSize).ToArray();
+                voiceBuffers[sender] = new Queue<float>(voiceBuffers[sender].Skip(chunkSize));
+                AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
+                clipToPlay.SetData(toVoice, 0);
+                toPlay.Enqueue(clipToPlay);
             }
 
-            if (!source.isPlaying) source.Play();
+            if (!source.isPlaying && toPlay.Count > 0)
+            {
+                AudioClip clipIn = toPlay.Dequeue();
+                source.clip = clipIn;
+                source.Play();
+            }
         }
 
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
