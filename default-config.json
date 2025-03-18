@@ -1,4 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/ow-mods/owml/master/schemas/config_schema.json",
-  "enabled": true
+  "enabled": true,
+  "settings": {
+    "Voice Volume": {
+      "type": "slider",
+      "min": 0,
+      "max": 200,
+      "value": 100
+    },
+    "My Separator": {
+      "type": "separator"
+    }
+  }
 }

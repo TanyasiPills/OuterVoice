@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,16 +21,16 @@ namespace OuterVoice
         private float voiceVolume;
         private float lastVoiceVolume = 1.0f;
 
-        private float[] data;
-        private int freq = 8192*2;
-        private int chunkSize = 4096;
-        private int sendSize = 8192 / 10;
+
+        private int freq = 32768;
+        private int chunkSize = 8192;
+        private int sendSize = 8192;
         private AudioClip clip;
         [SerializeField] private string mic;
 
         AudioSource myVoice;
         Queue<float> myQueue = new Queue<float>();
-        private Queue<AudioClip> MyToPlay = new Queue<AudioClip>();
+        private Queue<AudioClip> myToPlay = new Queue<AudioClip>();
 
         Camera camera;
 
@@ -40,12 +41,13 @@ namespace OuterVoice
         private Dictionary<uint, Queue<float>> voiceBuffers = new Dictionary<uint, Queue<float>>();
         private Queue<AudioClip> toPlay = new Queue<AudioClip>();
 
+        bool running = false;
+
         public void Awake(){Instance = this;}
 
         public void Start()
         {
-            camera = Camera.main;
-            voiceVolume = ModHelper.Config.GetSettingsValue<float>("Voice Volume");
+            voiceVolume = ModHelper.Config.GetSettingsValue<int>("Voice Volume")/100;
             audioSources = new Dictionary<uint, AudioSource>();
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
             ModHelper.Console.WriteLine($"Swompy mompy, {nameof(OuterVoice)} is loaded!", MessageType.Success);
@@ -55,13 +57,15 @@ namespace OuterVoice
             OnCompleteSceneLoad(OWScene.TitleScreen, OWScene.TitleScreen);
             LoadManager.OnCompleteSceneLoad += OnCompleteSceneLoad;
 
-            mic = Microphone.devices[0];
+            string micName = "PnP";
+            mic = Microphone.devices.FirstOrDefault(d => d.Contains(micName));
+            ModHelper.Console.WriteLine($"Microphone: {mic}", MessageType.Success);
         }
 
         private IEnumerator Record()
         {
-            clip = Microphone.Start(mic, true, 999, freq);
-            data = new float[freq];
+
+            clip = Microphone.Start(mic, false, 999, freq);
 
             while (Microphone.GetPosition(mic) < 0) yield return null;
 
@@ -71,14 +75,17 @@ namespace OuterVoice
             {
                 yield return new WaitForSeconds(0.05f);
                 int pos = Microphone.GetPosition(mic);
-                if (pos >= sendSize && pos != lastPos)
+                if (pos != lastPos)
                 {
-                    clip.GetData(data, pos - sendSize);
+                    int length = pos - lastPos;
 
-                    float[] chunkData = new float[sendSize];
-                    Array.Copy(data, chunkData, sendSize);
-
-                    SendVoice(chunkData);
+                    float[] data = new float[length];
+                    clip.GetData(data, lastPos);
+                    if (data.Max() > 0.05f)
+                    {
+                        SendVoice(data);
+                        PutItInsideMe(data);
+                    }
 
                     lastPos = pos;
                 }
@@ -86,20 +93,64 @@ namespace OuterVoice
 
         }
 
+        private void PutItInsideMe(float[] data)
+        {
+            if (myVoice != null)
+            {
+                myQueue = new Queue<float>(myQueue.Concat(data));   
+            }
+        }
+
+        private void PlayMe()
+        {
+            if (myQueue.Count > chunkSize)
+            {
+                float[] toVoice = myQueue.Take(chunkSize).ToArray();
+                myQueue = new Queue<float>(myQueue.Skip(chunkSize));
+                AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
+                clipToPlay.SetData(toVoice, 0);
+                myToPlay.Enqueue(clipToPlay);
+            }
+
+            if (!myVoice.isPlaying && myToPlay.Count > 0)
+            {
+                AudioClip clipIn = myToPlay.Dequeue();
+                myVoice.clip = clipIn;
+                myVoice.Play();
+            }
+        }
+
+        private void Update()
+        {
+            if (myVoice != null) PlayMe();
+
+            float newVolume = ModHelper.Config.GetSettingsValue<int>("Voice Volume") / 100;
+
+            if (newVolume != lastVoiceVolume)
+            {
+                lastVoiceVolume = newVolume;
+                voiceVolume = newVolume;
+                ApplyVolumeToAllSources();
+            }
+
+            if (Keyboard.current[Key.J].wasPressedThisFrame)
+            {
+                RaycastFromCamera();
+            }
+        }
+
+
         private void SpawnAudioPlayer(Vector3 positionIn, Transform parentIn)
         {
             GameObject audioplayer = new GameObject("AudioPlayer");
             audioplayer.transform.SetParent(parentIn);
             audioplayer.transform.position = positionIn;
-            AudioSource audioSource = audioplayer.AddComponent<AudioSource>();
-            audioSource.clip = audioClip;
-            audioSource.playOnAwake = false;
-            audioSource.loop = true;
-            audioSource.spatialBlend = 1f;
-            audioSource.volume = 0.5f;
-            audioSource.maxDistance = 50f;
-
-            audioSource.Play();
+            myVoice = audioplayer.AddComponent<AudioSource>();
+            myVoice.playOnAwake = false;
+            myVoice.loop = false;
+            myVoice.spatialBlend = 1f;
+            myVoice.volume = 10f;
+            myVoice.maxDistance = 100f;
         }
 
         private void RaycastFromCamera()
@@ -117,26 +168,10 @@ namespace OuterVoice
 
         private void ApplyVolumeToAllSources()
         {
+            ModHelper.Console.WriteLine($"Audio volume changed!", MessageType.Info);
             foreach (var source in audioSources.Values)
             {
                 source.volume = voiceVolume;
-            }
-        }
-
-        private void Update()
-        {
-            float newVolume = ModHelper.Config.GetSettingsValue<float>("Voice Volume");
-
-            if (newVolume != lastVoiceVolume)
-            {
-                lastVoiceVolume = newVolume;
-                voiceVolume = newVolume;
-                ApplyVolumeToAllSources();
-            }
-
-            if (Keyboard.current[Key.J].wasPressedThisFrame)
-            {
-
             }
         }
 
@@ -188,6 +223,8 @@ namespace OuterVoice
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
         {
             if (newScene != OWScene.SolarSystem) return;
+
+            camera = Camera.main;
 
             ModHelper.Console.WriteLine("Loaded into solar system!", MessageType.Success);
             if (buddyApi.GetIsHost())
