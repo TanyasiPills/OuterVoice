@@ -22,14 +22,19 @@ namespace OuterVoice
         private float lastVoiceVolume = 1.0f;
 
 
-        private int freq = 32768;
-        private int chunkSize = 8192;
-        private int sendSize = 8192;
+        private int freq = 44100;
+        private int chunkSize = 22050;
+        private double clipTime;
+        private double currentTime;
+        private double nextTime;
         private AudioClip clip;
         [SerializeField] private string mic;
 
         AudioSource myVoice;
-        Queue<float> myQueue = new Queue<float>();
+        AudioSource myVoice2;
+        AudioSource[] myVoices = new AudioSource[2];
+        bool[] hasClip = {false, false};
+        List<float> myQueue = new List<float>();
         private Queue<AudioClip> myToPlay = new Queue<AudioClip>();
 
         Camera camera;
@@ -42,11 +47,14 @@ namespace OuterVoice
         private Queue<AudioClip> toPlay = new Queue<AudioClip>();
 
         bool running = false;
+        int srcNow = 0;
 
         public void Awake(){Instance = this;}
 
         public void Start()
         {
+            clipTime = chunkSize / freq;
+
             voiceVolume = ModHelper.Config.GetSettingsValue<int>("Voice Volume")/100;
             audioSources = new Dictionary<uint, AudioSource>();
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
@@ -73,7 +81,7 @@ namespace OuterVoice
 
             while (true)
             {
-                yield return new WaitForSeconds(0.05f);
+                yield return null;
                 int pos = Microphone.GetPosition(mic);
                 if (pos != lastPos)
                 {
@@ -81,7 +89,7 @@ namespace OuterVoice
 
                     float[] data = new float[length];
                     clip.GetData(data, lastPos);
-                    if (data.Max() > 0.05f)
+                    if (data.Max() > 0.005f)
                     {
                         SendVoice(data);
                         PutItInsideMe(data);
@@ -97,26 +105,50 @@ namespace OuterVoice
         {
             if (myVoice != null)
             {
-                myQueue = new Queue<float>(myQueue.Concat(data));   
+                myQueue.AddRange(data);
+
+                if (myQueue.Count > chunkSize)
+                {
+                    float[] toVoice = myQueue.Take(chunkSize).ToArray();
+                    myQueue.RemoveRange(0, chunkSize);
+
+                    AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
+                    clipToPlay.SetData(toVoice, 0);
+                    myToPlay.Enqueue(clipToPlay);
+                }
+
             }
         }
 
         private void PlayMe()
         {
-            if (myQueue.Count > chunkSize)
+            if (!running)
             {
-                float[] toVoice = myQueue.Take(chunkSize).ToArray();
-                myQueue = new Queue<float>(myQueue.Skip(chunkSize));
-                AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
-                clipToPlay.SetData(toVoice, 0);
-                myToPlay.Enqueue(clipToPlay);
+                if(myToPlay.Count > 0)
+                {
+                    myVoices[srcNow].clip = myToPlay.Dequeue();
+                    currentTime = AudioSettings.dspTime;
+                    nextTime = currentTime + clipTime;
+                    myVoices[srcNow].PlayScheduled(nextTime);
+                    nextTime = nextTime + clipTime;
+                    srcNow = (srcNow == 0) ? 1 : 0;
+                    running = true;
+                }
             }
-
-            if (!myVoice.isPlaying && myToPlay.Count > 0)
+            else
             {
-                AudioClip clipIn = myToPlay.Dequeue();
-                myVoice.clip = clipIn;
-                myVoice.Play();
+                currentTime = AudioSettings.dspTime;
+                if(currentTime + 0.05f > nextTime && myToPlay.Count > 0)
+                {
+                    myVoices[srcNow].clip = myToPlay.Dequeue();
+                    myVoices[srcNow].PlayScheduled(nextTime);
+                    nextTime = nextTime + clipTime;
+                    srcNow = (srcNow == 0) ? 1 : 0;
+                }
+                if (myToPlay.Count < 1)
+                {
+                    running = false;
+                }
             }
         }
 
@@ -124,12 +156,12 @@ namespace OuterVoice
         {
             if (myVoice != null) PlayMe();
 
-            float newVolume = ModHelper.Config.GetSettingsValue<int>("Voice Volume") / 100;
+            float newVolume = ModHelper.Config.GetSettingsValue<int>("Voice Volume");
 
             if (newVolume != lastVoiceVolume)
             {
                 lastVoiceVolume = newVolume;
-                voiceVolume = newVolume;
+                voiceVolume = newVolume / 2;
                 ApplyVolumeToAllSources();
             }
 
@@ -151,6 +183,16 @@ namespace OuterVoice
             myVoice.spatialBlend = 1f;
             myVoice.volume = 10f;
             myVoice.maxDistance = 100f;
+
+            myVoice2 = audioplayer.AddComponent<AudioSource>();
+            myVoice2.playOnAwake = false;
+            myVoice2.loop = false;
+            myVoice2.spatialBlend = 1f;
+            myVoice2.volume = 10f;
+            myVoice2.maxDistance = 100f;
+
+            myVoices[0] = myVoice;
+            myVoices[1] = myVoice2;
         }
 
         private void RaycastFromCamera()
@@ -172,6 +214,11 @@ namespace OuterVoice
             foreach (var source in audioSources.Values)
             {
                 source.volume = voiceVolume;
+            }
+            if (myVoices[0] != null)
+            {
+                myVoices[0].volume = voiceVolume;
+                myVoices[1].volume = voiceVolume;
             }
         }
 
