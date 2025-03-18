@@ -1,0 +1,10 @@
+{
+  "config": {
+    "Voice Volume": {
+      "type": "slider",
+      "min": 0.5,
+      "max": 2.0,
+      "default": 1.0
+    }
+  }
+}
