@@ -4,12 +4,15 @@
   "settings": {
     "Voice Volume": {
       "type": "slider",
-      "min": 1,
-      "max": 100,
-      "value": 1
+      "min": 0,
+      "max": 1000,
+      "value": 500
     },
-    "My Separator": {
-      "type": "separator"
+    "Mic Volume": {
+      "type": "slider",
+      "min": 0,
+      "max": 1000,
+      "value": 500
     }
   }
 }

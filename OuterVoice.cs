@@ -9,6 +9,7 @@ using OWML.Common;
 using OWML.ModHelper;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System.Threading.Tasks;
 
 namespace OuterVoice
 {
@@ -19,7 +20,9 @@ namespace OuterVoice
 
         private AudioClip audioClip;
         private float voiceVolume;
-        private float lastVoiceVolume = 1.0f;
+        private float micVolume;
+        private float lastVoiceVolume = 0;
+        private float lastMicVolume = 0;
 
 
         private int freq = 44100;
@@ -54,8 +57,6 @@ namespace OuterVoice
         public void Start()
         {
             clipTime = chunkSize / freq;
-
-            voiceVolume = ModHelper.Config.GetSettingsValue<int>("Voice Volume")/100;
             audioSources = new Dictionary<uint, AudioSource>();
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
             ModHelper.Console.WriteLine($"Swompy mompy, {nameof(OuterVoice)} is loaded!", MessageType.Success);
@@ -89,6 +90,12 @@ namespace OuterVoice
 
                     float[] data = new float[length];
                     clip.GetData(data, lastPos);
+
+                    Parallel.For(0, data.Length, i =>
+                    {
+                        data[i] = Mathf.Clamp(data[i] * micVolume, -1.0f, 1.0f);
+                    });
+
                     if (data.Max() > 0.005f)
                     {
                         SendVoice(data);
@@ -111,7 +118,12 @@ namespace OuterVoice
                 {
                     float[] toVoice = myQueue.Take(chunkSize).ToArray();
                     myQueue.RemoveRange(0, chunkSize);
-
+                    
+                    Parallel.For(0, toVoice.Length, i =>
+                    {
+                        toVoice[i] = Mathf.Clamp(toVoice[i] * voiceVolume, -1.0f, 1.0f);
+                    });
+                    
                     AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
                     clipToPlay.SetData(toVoice, 0);
                     myToPlay.Enqueue(clipToPlay);
@@ -156,13 +168,24 @@ namespace OuterVoice
         {
             if (myVoice != null) PlayMe();
 
-            float newVolume = ModHelper.Config.GetSettingsValue<int>("Voice Volume");
+            float newVolume = ModHelper.Config.GetSettingsValue<float>("Voice Volume");
 
             if (newVolume != lastVoiceVolume)
             {
+                ModHelper.Console.WriteLine($"Audio volume(real): {newVolume}", MessageType.Info);
                 lastVoiceVolume = newVolume;
-                voiceVolume = newVolume / 2;
-                ApplyVolumeToAllSources();
+                voiceVolume = newVolume / 500;
+                ModHelper.Console.WriteLine($"Audio volume: {voiceVolume}", MessageType.Info);
+                //ApplyVolumeToAllSources();
+            }
+
+            float newMicVolume = ModHelper.Config.GetSettingsValue<float>("Mic Volume");
+
+            if (newMicVolume != lastVoiceVolume)
+            {
+                lastMicVolume = newMicVolume;
+                micVolume = newMicVolume / 500;
+                //ApplyVolumeToAllSources();
             }
 
             if (Keyboard.current[Key.J].wasPressedThisFrame)
@@ -181,14 +204,14 @@ namespace OuterVoice
             myVoice.playOnAwake = false;
             myVoice.loop = false;
             myVoice.spatialBlend = 1f;
-            myVoice.volume = 10f;
+            myVoice.volume = 1f;
             myVoice.maxDistance = 100f;
 
             myVoice2 = audioplayer.AddComponent<AudioSource>();
             myVoice2.playOnAwake = false;
             myVoice2.loop = false;
             myVoice2.spatialBlend = 1f;
-            myVoice2.volume = 10f;
+            myVoice2.volume = 1f;
             myVoice2.maxDistance = 100f;
 
             myVoices[0] = myVoice;
