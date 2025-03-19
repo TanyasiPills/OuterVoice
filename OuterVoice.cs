@@ -10,6 +10,8 @@ using OWML.ModHelper;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
+using Epic.OnlineServices;
 
 namespace OuterVoice
 {
@@ -46,16 +48,71 @@ namespace OuterVoice
 
         uint myId = 999;
 
-        private Dictionary<uint, Queue<float>> voiceBuffers = new Dictionary<uint, Queue<float>>();
-        private Queue<AudioClip> toPlay = new Queue<AudioClip>();
+        private Dictionary<uint, List<float>> voiceBuffers = new Dictionary<uint, List<float>>();
+        private Dictionary<uint, Queue<AudioClip>> toPlay = new Dictionary<uint, Queue<AudioClip>>();
 
         bool running = false;
         int srcNow = 0;
 
-        public void Awake(){Instance = this;}
+        public void Awake() { 
+            Instance = this;
+        }
+
+        public override void Configure(IModConfig config)
+        {
+            if (ModHelper.Config == null)
+            {
+                ModHelper.Console.WriteLine("ModHelper.Config is not initialized!", MessageType.Error);
+                return;
+            }
+
+            if (config == null)
+            {
+                ModHelper.Console.WriteLine("Config is null!", MessageType.Error);
+                return;
+            }
+
+            var ja = config.GetSettingsValue<string>("Used Mic");
+
+            if (string.IsNullOrEmpty(ja))
+            {
+                ModHelper.Console.WriteLine("No mic selection in config!", MessageType.Info);
+                return;
+            }
+
+            string micSelected = ja.Replace(".", "");
+            ModHelper.Console.WriteLine($"String: {ja}", MessageType.Info);
+
+            if (Microphone.devices == null || Microphone.devices.Length == 0)
+            {
+                ModHelper.Console.WriteLine("No microphone devices found!", MessageType.Error);
+                return;
+            }
+
+            var matchingMic = Microphone.devices.FirstOrDefault(e => e.Contains(micSelected));
+
+            if (matchingMic != null)
+            {
+                mic = matchingMic;
+                ModHelper.Console.WriteLine($"Value: {mic}", MessageType.Success);
+            }
+            else
+            {
+                ModHelper.Console.WriteLine("Selected microphone not found in the list!", MessageType.Error);
+            }
+        }
 
         public void Start()
         {
+            IModConfig config = ModHelper.Config;
+            Dictionary<string, object> dict = new Dictionary<string, object>();
+            dict["type"] = "selector";
+            List<string> list = Microphone.devices.Select(e => e.Substring(0, 14) + "...").ToList();
+            dict["options"] = list;
+
+            JObject newSettings = JObject.FromObject(dict);
+            config.Settings["Used Mic"] = newSettings;
+
             clipTime = chunkSize / freq;
             audioSources = new Dictionary<uint, AudioSource>();
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
@@ -65,10 +122,6 @@ namespace OuterVoice
 
             OnCompleteSceneLoad(OWScene.TitleScreen, OWScene.TitleScreen);
             LoadManager.OnCompleteSceneLoad += OnCompleteSceneLoad;
-
-            string micName = "PnP";
-            mic = Microphone.devices.FirstOrDefault(d => d.Contains(micName));
-            ModHelper.Console.WriteLine($"Microphone: {mic}", MessageType.Success);
         }
 
         private IEnumerator Record()
@@ -169,6 +222,7 @@ namespace OuterVoice
             if (myVoice != null) PlayMe();
 
             float newVolume = ModHelper.Config.GetSettingsValue<float>("Voice Volume");
+            IModConfig config;
 
             if (newVolume != lastVoiceVolume)
             {
@@ -256,7 +310,7 @@ namespace OuterVoice
                 ModHelper.Console.WriteLine("Data is null, cannot send voice!", MessageType.Error);
             }
         }
-
+        /*
         private void GetVoice(uint sender, float[] data)
         {
             if (!voiceBuffers.ContainsKey(sender))
@@ -289,7 +343,7 @@ namespace OuterVoice
                 source.Play();
             }
         }
-
+        */
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
         {
             if (newScene != OWScene.SolarSystem) return;
@@ -316,7 +370,7 @@ namespace OuterVoice
             if (buddyApi.GetIsHost())
             {
                 StartCoroutine(Record());
-                buddyApi.RegisterHandler<float[]>("voice", GetVoice);
+                //buddyApi.RegisterHandler<float[]>("voice", GetVoice);
             }
         }
 
@@ -338,7 +392,7 @@ namespace OuterVoice
 
             ModHelper.Console.WriteLine($"joined as: {myId}");
             StartCoroutine(Record());
-            buddyApi.RegisterHandler<float[]>("voice", GetVoice);
+            //buddyApi.RegisterHandler<float[]>("voice", GetVoice);
         }
 
         private void PlayerJoined(uint playerID)
