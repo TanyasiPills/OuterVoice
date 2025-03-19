@@ -12,6 +12,7 @@ using UnityEngine.InputSystem;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using Epic.OnlineServices;
+using Steamworks;
 
 namespace OuterVoice
 {
@@ -49,10 +50,10 @@ namespace OuterVoice
         uint myId = 999;
 
         private Dictionary<uint, List<float>> voiceBuffers = new Dictionary<uint, List<float>>();
-        private Dictionary<uint, Queue<AudioClip>> toPlay = new Dictionary<uint, Queue<AudioClip>>();
+        private Dictionary<uint, PlayerSource> players = new Dictionary<uint, PlayerSource>();
 
         bool running = false;
-        int srcNow = 0;
+        int srcNow = 0;    
 
         public void Awake() { 
             Instance = this;
@@ -159,6 +160,38 @@ namespace OuterVoice
                 }
             }
 
+        }
+
+        private void GetVoice(uint sender, float[] data)
+        {
+            if (!voiceBuffers.ContainsKey(sender))
+                voiceBuffers[sender] = new List<float>();
+
+            voiceBuffers[sender].AddRange(data);
+
+            if (!audioSources.ContainsKey(sender))
+            {
+                ModHelper.Console.WriteLine($"Audio source for player {sender} is not initialized!", MessageType.Error);
+                return;
+            }
+
+            AudioSource source = audioSources[sender];
+
+            if (voiceBuffers[sender].Count > chunkSize)
+            {
+                float[] toVoice = voiceBuffers[sender].Take(chunkSize).ToArray();
+                voiceBuffers[sender] = new Queue<float>(voiceBuffers[sender].Skip(chunkSize));
+                AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
+                clipToPlay.SetData(toVoice, 0);
+                toPlay.Enqueue(clipToPlay);
+            }
+
+            if (!source.isPlaying && toPlay.Count > 0)
+            {
+                AudioClip clipIn = toPlay.Dequeue();
+                source.clip = clipIn;
+                source.Play();
+            }
         }
 
         private void RelaySelf(float[] data)
@@ -310,40 +343,9 @@ namespace OuterVoice
                 ModHelper.Console.WriteLine("Data is null, cannot send voice!", MessageType.Error);
             }
         }
-        /*
-        private void GetVoice(uint sender, float[] data)
-        {
-            if (!voiceBuffers.ContainsKey(sender))
-                voiceBuffers[sender] = new Queue<float>();
+        
 
-
-            voiceBuffers[sender] = new Queue<float>(voiceBuffers[sender].Concat(data));
-
-            if (!audioSources.ContainsKey(sender))
-            {
-                ModHelper.Console.WriteLine($"Audio source for player {sender} is not initialized!", MessageType.Error);
-                return;
-            }
-
-            AudioSource source = audioSources[sender];
-
-            if(voiceBuffers[sender].Count > chunkSize)
-            {
-                float[] toVoice = voiceBuffers[sender].Take(chunkSize).ToArray();
-                voiceBuffers[sender] = new Queue<float>(voiceBuffers[sender].Skip(chunkSize));
-                AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
-                clipToPlay.SetData(toVoice, 0);
-                toPlay.Enqueue(clipToPlay);
-            }
-
-            if (!source.isPlaying && toPlay.Count > 0)
-            {
-                AudioClip clipIn = toPlay.Dequeue();
-                source.clip = clipIn;
-                source.Play();
-            }
-        }
-        */
+        
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
         {
             if (newScene != OWScene.SolarSystem) return;
@@ -370,7 +372,7 @@ namespace OuterVoice
             if (buddyApi.GetIsHost())
             {
                 StartCoroutine(Record());
-                //buddyApi.RegisterHandler<float[]>("voice", GetVoice);
+                buddyApi.RegisterHandler<float[]>("voice", GetVoice);
             }
         }
 
@@ -392,7 +394,7 @@ namespace OuterVoice
 
             ModHelper.Console.WriteLine($"joined as: {myId}");
             StartCoroutine(Record());
-            //buddyApi.RegisterHandler<float[]>("voice", GetVoice);
+            buddyApi.RegisterHandler<float[]>("voice", GetVoice);
         }
 
         private void PlayerJoined(uint playerID)
