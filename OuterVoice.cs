@@ -152,7 +152,7 @@ namespace OuterVoice
                     if (data.Max() > 0.005f)
                     {
                         SendVoice(data);
-                        PutItInsideMe(data);
+                        RelaySelf(data);
                     }
 
                     lastPos = pos;
@@ -161,7 +161,7 @@ namespace OuterVoice
 
         }
 
-        private void PutItInsideMe(float[] data)
+        private void RelaySelf(float[] data)
         {
             if (myVoice != null)
             {
@@ -185,7 +185,7 @@ namespace OuterVoice
             }
         }
 
-        private void PlayMe()
+        private void PlaySelf()
         {
             if (!running)
             {
@@ -219,7 +219,7 @@ namespace OuterVoice
 
         private void Update()
         {
-            if (myVoice != null) PlayMe();
+            if (myVoice != null) PlaySelf();
 
             float newVolume = ModHelper.Config.GetSettingsValue<float>("Voice Volume");
             IModConfig config;
