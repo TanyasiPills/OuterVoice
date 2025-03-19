@@ -36,12 +36,8 @@ namespace OuterVoice
         private AudioClip clip;
         [SerializeField] private string mic;
 
-        AudioSource myVoice;
-        AudioSource myVoice2;
-        AudioSource[] myVoices = new AudioSource[2];
-        bool[] hasClip = {false, false};
+        PlayerSource me;
         List<float> myQueue = new List<float>();
-        private Queue<AudioClip> myToPlay = new Queue<AudioClip>();
 
         Camera camera;
 
@@ -73,6 +69,7 @@ namespace OuterVoice
                 return;
             }
 
+            //audio input
             var ja = config.GetSettingsValue<string>("Used Mic");
 
             if (string.IsNullOrEmpty(ja))
@@ -101,6 +98,26 @@ namespace OuterVoice
             {
                 ModHelper.Console.WriteLine("Selected microphone not found in the list!", MessageType.Error);
             }
+
+
+            //volume
+            float newVolume = ModHelper.Config.GetSettingsValue<float>("Voice Volume");
+
+            if (newVolume != lastVoiceVolume)
+            {
+                ModHelper.Console.WriteLine($"Audio volume(real): {newVolume}", MessageType.Info);
+                lastVoiceVolume = newVolume;
+                voiceVolume = newVolume / 500;
+                ModHelper.Console.WriteLine($"Audio volume: {voiceVolume}", MessageType.Info);
+            }
+
+            float newMicVolume = ModHelper.Config.GetSettingsValue<float>("Mic Volume");
+
+            if (newMicVolume != lastVoiceVolume)
+            {
+                lastMicVolume = newMicVolume;
+                micVolume = newMicVolume / 500;
+            }
         }
 
         public void Start()
@@ -108,6 +125,7 @@ namespace OuterVoice
             IModConfig config = ModHelper.Config;
             Dictionary<string, object> dict = new Dictionary<string, object>();
             dict["type"] = "selector";
+            dict["value"] = Microphone.devices[0].Substring(0, 14) + "...";
             List<string> list = Microphone.devices.Select(e => e.Substring(0, 14) + "...").ToList();
             dict["options"] = list;
 
@@ -169,34 +187,23 @@ namespace OuterVoice
 
             voiceBuffers[sender].AddRange(data);
 
-            if (!audioSources.ContainsKey(sender))
-            {
-                ModHelper.Console.WriteLine($"Audio source for player {sender} is not initialized!", MessageType.Error);
-                return;
-            }
-
-            AudioSource source = audioSources[sender];
-
             if (voiceBuffers[sender].Count > chunkSize)
             {
                 float[] toVoice = voiceBuffers[sender].Take(chunkSize).ToArray();
-                voiceBuffers[sender] = new Queue<float>(voiceBuffers[sender].Skip(chunkSize));
+                voiceBuffers[sender].RemoveRange(0, chunkSize);
+
+                Parallel.For(0, toVoice.Length, i => toVoice[i] = Mathf.Clamp(toVoice[i] * voiceVolume, -1.0f, 1.0f));
+
                 AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
                 clipToPlay.SetData(toVoice, 0);
-                toPlay.Enqueue(clipToPlay);
-            }
-
-            if (!source.isPlaying && toPlay.Count > 0)
-            {
-                AudioClip clipIn = toPlay.Dequeue();
-                source.clip = clipIn;
-                source.Play();
+                players[sender].AddToQueue(clipToPlay);
             }
         }
 
+        //debug purposes + fun
         private void RelaySelf(float[] data)
         {
-            if (myVoice != null)
+            if (me != null)
             {
                 myQueue.AddRange(data);
 
@@ -205,75 +212,26 @@ namespace OuterVoice
                     float[] toVoice = myQueue.Take(chunkSize).ToArray();
                     myQueue.RemoveRange(0, chunkSize);
                     
-                    Parallel.For(0, toVoice.Length, i =>
-                    {
-                        toVoice[i] = Mathf.Clamp(toVoice[i] * voiceVolume, -1.0f, 1.0f);
-                    });
+                    Parallel.For(0, toVoice.Length, i =>toVoice[i] = Mathf.Clamp(toVoice[i] * voiceVolume, -1.0f, 1.0f));
                     
                     AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
                     clipToPlay.SetData(toVoice, 0);
-                    myToPlay.Enqueue(clipToPlay);
+                    me.AddToQueue(clipToPlay);
                 }
 
             }
         }
 
-        private void PlaySelf()
+
+        private void PlayVoices()
         {
-            if (!running)
-            {
-                if(myToPlay.Count > 0)
-                {
-                    myVoices[srcNow].clip = myToPlay.Dequeue();
-                    currentTime = AudioSettings.dspTime;
-                    nextTime = currentTime + clipTime;
-                    myVoices[srcNow].PlayScheduled(nextTime);
-                    nextTime = nextTime + clipTime;
-                    srcNow = (srcNow == 0) ? 1 : 0;
-                    running = true;
-                }
-            }
-            else
-            {
-                currentTime = AudioSettings.dspTime;
-                if(currentTime + 0.05f > nextTime && myToPlay.Count > 0)
-                {
-                    myVoices[srcNow].clip = myToPlay.Dequeue();
-                    myVoices[srcNow].PlayScheduled(nextTime);
-                    nextTime = nextTime + clipTime;
-                    srcNow = (srcNow == 0) ? 1 : 0;
-                }
-                if (myToPlay.Count < 1)
-                {
-                    running = false;
-                }
-            }
+            Parallel.For(0, players.Count, i => players[(uint)i].Play());
         }
 
         private void Update()
         {
-            if (myVoice != null) PlaySelf();
-
-            float newVolume = ModHelper.Config.GetSettingsValue<float>("Voice Volume");
-            IModConfig config;
-
-            if (newVolume != lastVoiceVolume)
-            {
-                ModHelper.Console.WriteLine($"Audio volume(real): {newVolume}", MessageType.Info);
-                lastVoiceVolume = newVolume;
-                voiceVolume = newVolume / 500;
-                ModHelper.Console.WriteLine($"Audio volume: {voiceVolume}", MessageType.Info);
-                //ApplyVolumeToAllSources();
-            }
-
-            float newMicVolume = ModHelper.Config.GetSettingsValue<float>("Mic Volume");
-
-            if (newMicVolume != lastVoiceVolume)
-            {
-                lastMicVolume = newMicVolume;
-                micVolume = newMicVolume / 500;
-                //ApplyVolumeToAllSources();
-            }
+            if (me != null) me.Play();
+            PlayVoices();
 
             if (Keyboard.current[Key.J].wasPressedThisFrame)
             {
@@ -285,24 +243,7 @@ namespace OuterVoice
         private void SpawnAudioPlayer(Vector3 positionIn, Transform parentIn)
         {
             GameObject audioplayer = new GameObject("AudioPlayer");
-            audioplayer.transform.SetParent(parentIn);
-            audioplayer.transform.position = positionIn;
-            myVoice = audioplayer.AddComponent<AudioSource>();
-            myVoice.playOnAwake = false;
-            myVoice.loop = false;
-            myVoice.spatialBlend = 1f;
-            myVoice.volume = 1f;
-            myVoice.maxDistance = 100f;
-
-            myVoice2 = audioplayer.AddComponent<AudioSource>();
-            myVoice2.playOnAwake = false;
-            myVoice2.loop = false;
-            myVoice2.spatialBlend = 1f;
-            myVoice2.volume = 1f;
-            myVoice2.maxDistance = 100f;
-
-            myVoices[0] = myVoice;
-            myVoices[1] = myVoice2;
+            me = new PlayerSource(audioplayer, clipTime);
         }
 
         private void RaycastFromCamera()
@@ -318,33 +259,11 @@ namespace OuterVoice
             }
         }
 
-        private void ApplyVolumeToAllSources()
-        {
-            ModHelper.Console.WriteLine($"Audio volume changed!", MessageType.Info);
-            foreach (var source in audioSources.Values)
-            {
-                source.volume = voiceVolume;
-            }
-            if (myVoices[0] != null)
-            {
-                myVoices[0].volume = voiceVolume;
-                myVoices[1].volume = voiceVolume;
-            }
-        }
-
         private void SendVoice(float[] data)
         {
-            if (data != null)
-            {
-                buddyApi.SendMessage("voice", data);
-            }
-            else
-            {
-                ModHelper.Console.WriteLine("Data is null, cannot send voice!", MessageType.Error);
-            }
+            if (data != null) buddyApi.SendMessage("voice", data);
+            else ModHelper.Console.WriteLine("Data is null, cannot send voice!", MessageType.Error);
         }
-        
-
         
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
         {
@@ -411,31 +330,16 @@ namespace OuterVoice
                 ModHelper.Console.WriteLine($"Waiting for player[{id}] to be ready...", MessageType.Info);
                 yield return new WaitForSeconds(0.5f);
             }
+
             GameObject player = buddyApi.GetPlayerBody(id);
+
             if (player == null)
             {
                 ModHelper.Console.WriteLine("Player not found!", MessageType.Error);
                 yield break;
             }
 
-            AudioSource souce = player.GetComponent<AudioSource>();
-            if (souce == null)
-            {
-                souce = player.AddComponent<AudioSource>();
-            }
-
-            if (audioSources == null)
-            {
-                audioSources = new Dictionary<uint, AudioSource>();
-            }
-
-            souce.playOnAwake = false;
-            souce.loop = false;
-            souce.spatialBlend = 1f;
-            souce.volume = 1f;
-            souce.maxDistance = 100f;
-
-            audioSources[id] = souce;
+            players[id] = new PlayerSource(player, clipTime);
         }      
     }
 }

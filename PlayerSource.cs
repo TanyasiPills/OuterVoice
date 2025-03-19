@@ -19,7 +19,7 @@ namespace OuterVoice
 
         Queue<AudioClip> clips;
 
-        public PlayerSource(GameObject player, double clipTimeIn, Queue<AudioClip> clipsIn)
+        public PlayerSource(GameObject player, double clipTimeIn)
         {
             running = false;
             idx = 0;
@@ -28,7 +28,7 @@ namespace OuterVoice
             srcs[0] = CreateSource(player);
             srcs[1] = CreateSource(player);
 
-            clips = clipsIn;
+            clips = new Queue<AudioClip>();
             clipTime = clipTimeIn;
         }
 
