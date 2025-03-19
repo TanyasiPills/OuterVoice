@@ -28,8 +28,8 @@ namespace OuterVoice
         private float lastMicVolume = 0;
 
 
-        private int freq = 44100;
-        private int chunkSize = 22050;
+        private int freq = 22050;
+        private int chunkSize = 5512;
         private double clipTime;
         private double currentTime;
         private double nextTime;
@@ -132,7 +132,9 @@ namespace OuterVoice
             JObject newSettings = JObject.FromObject(dict);
             config.Settings["Used Mic"] = newSettings;
 
-            clipTime = chunkSize / freq;
+            Configure(config);
+
+            clipTime = (double)chunkSize / (double)freq;
             audioSources = new Dictionary<uint, AudioSource>();
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
             ModHelper.Console.WriteLine($"Swompy mompy, {nameof(OuterVoice)} is loaded!", MessageType.Success);
@@ -156,6 +158,9 @@ namespace OuterVoice
             {
                 yield return null;
                 int pos = Microphone.GetPosition(mic);
+
+                if (pos < lastPos) lastPos = 0;
+
                 if (pos != lastPos)
                 {
                     int length = pos - lastPos;
@@ -163,13 +168,13 @@ namespace OuterVoice
                     float[] data = new float[length];
                     clip.GetData(data, lastPos);
 
-                    Parallel.For(0, data.Length, i =>
-                    {
-                        data[i] = Mathf.Clamp(data[i] * micVolume, -1.0f, 1.0f);
-                    });
 
                     if (data.Max() > 0.005f)
                     {
+                        Parallel.For(0, data.Length, i =>
+                        {
+                            data[i] = Mathf.Clamp(data[i] * micVolume, -1.0f, 1.0f);
+                        });
                         SendVoice(data);
                         RelaySelf(data);
                     }
@@ -222,10 +227,12 @@ namespace OuterVoice
             }
         }
 
-
         private void PlayVoices()
         {
-            Parallel.For(0, players.Count, i => players[(uint)i].Play());
+            foreach (var item in players)
+            {
+                item.Value.Play();
+            }
         }
 
         private void Update()
@@ -244,6 +251,7 @@ namespace OuterVoice
         {
             GameObject audioplayer = new GameObject("AudioPlayer");
             me = new PlayerSource(audioplayer, clipTime);
+            audioplayer.transform.parent = parentIn;
         }
 
         private void RaycastFromCamera()
