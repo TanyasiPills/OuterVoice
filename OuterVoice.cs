@@ -303,7 +303,27 @@ namespace OuterVoice
             }
         }
 
-        private IEnumerator WaitForLocalPlayerInitialization()
+		private void PlayerJoined(uint playerID)
+		{
+			if (playerID == 1) return;
+			StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
+		}
+
+		private void PlayerLeave(uint playerID)
+		{
+            if (playerID == 1)
+            {
+                players.Clear();
+                voiceBuffers.Clear();
+            }
+            else
+            {
+                players.Remove(playerID);
+                voiceBuffers.Remove(playerID);
+            }
+		}
+
+		private IEnumerator WaitForLocalPlayerInitialization()
         {
             while (buddyApi.GetLocalPlayerID() == 0)
             {
@@ -322,13 +342,6 @@ namespace OuterVoice
             ModHelper.Console.WriteLine($"joined as: {myId}");
             StartCoroutine(Record());
             buddyApi.RegisterHandler<float[]>("voice", GetVoice);
-        }
-
-        private void PlayerJoined(uint playerID)
-        {
-            if (playerID == 1) return;
-            StartCoroutine(WaitForPlayerAndSetupAudio(playerID));
-            ModHelper.Console.WriteLine($"Player id: {playerID}");
         }
         
         private IEnumerator WaitForPlayerAndSetupAudio(uint id)
