@@ -261,7 +261,6 @@ namespace OuterVoice
 
             if (Physics.Raycast(ray, out hit, 100f))
             {
-                ModHelper.Console.WriteLine("collision detected at position: " + hit.point.ToString());
                 Transform parent = hit.transform;
                 SpawnAudioPlayer(hit.point, parent);
             }
@@ -279,7 +278,6 @@ namespace OuterVoice
 
             camera = Camera.main;
 
-            ModHelper.Console.WriteLine("Loaded into solar system!", MessageType.Success);
             if (buddyApi.GetIsHost())
             {
                 myId = 1;
@@ -290,7 +288,6 @@ namespace OuterVoice
 
             buddyApi.OnPlayerJoin().AddListener(PlayerJoined);
 
-            ModHelper.Console.WriteLine($"yam", MessageType.Success);
             uint[] ids = buddyApi.GetPlayerIDs();
             foreach (uint id in ids)
             {
@@ -313,11 +310,16 @@ namespace OuterVoice
 		{
             if (playerID == 1)
             {
+                foreach(var item in players)
+                {
+					item.Cleanup();
+				}
                 players.Clear();
                 voiceBuffers.Clear();
             }
             else
             {
+                players[palyerID].Cleanup();
                 players.Remove(playerID);
                 voiceBuffers.Remove(playerID);
             }

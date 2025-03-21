@@ -50,7 +50,26 @@ namespace OuterVoice
             return source;
         }
 
-        public void Play()
+		public void Cleanup()
+		{
+			foreach (var clip in clips)
+			{
+				if (clip != null)
+				{
+					Destroy(clip);
+				}
+			}
+
+			foreach (var src in srcs)
+			{
+				if (src != null)
+				{
+					Destroy(src);
+				}
+			}
+		}
+
+		public void Play()
         {
             if (!running)
             {
