@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace OuterVoice
 {
-    internal class PlayerSource
+    internal class PlayerSource : MonoBehaviour
     {
         private AudioSource[] srcs;
         private int idx;
