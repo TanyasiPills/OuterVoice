@@ -59,6 +59,10 @@ namespace OuterVoice
                     currentTime = AudioSettings.dspTime;
                     nextTime = currentTime + clipTime;
 
+                    if (srcs[idx].clip != null)
+                    {
+                        Destroy(srcs[idx].clip);
+                    }
                     srcs[idx].clip = clips.Dequeue();
                     srcs[idx].PlayScheduled(nextTime);
 

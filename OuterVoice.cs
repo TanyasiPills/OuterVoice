@@ -161,25 +161,25 @@ namespace OuterVoice
 
                 if (pos < lastPos) lastPos = 0;
 
-                if (pos != lastPos)
+                if (pos != lastPos && pos - lastPos > 250)
                 {
-                    int length = pos - lastPos;
+					int length = pos - lastPos;
 
-                    float[] data = new float[length];
-                    clip.GetData(data, lastPos);
+					float[] data = new float[length];
+					clip.GetData(data, lastPos);
 
 
-                    if (data.Max() > 0.005f)
-                    {
-                        Parallel.For(0, data.Length, i =>
-                        {
-                            data[i] = Mathf.Clamp(data[i] * micVolume, -1.0f, 1.0f);
-                        });
-                        SendVoice(data);
-                        RelaySelf(data);
-                    }
+					if (data.Max() > 0.005f)
+					{
+						Parallel.For(0, data.Length, i =>
+						{
+							data[i] = Mathf.Clamp(data[i] * micVolume, -1.0f, 1.0f);
+						});
+						SendVoice(data);
+						RelaySelf(data);
+					}
 
-                    lastPos = pos;
+					lastPos = pos;
                 }
             }
 
