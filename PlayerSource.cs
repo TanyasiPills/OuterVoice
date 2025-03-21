@@ -76,7 +76,7 @@ namespace OuterVoice
                 if (clips.Count > 0)
                 {
                     currentTime = AudioSettings.dspTime;
-                    nextTime = currentTime + clipTime;
+                    nextTime = currentTime + (clipTime/2.0f);
 
                     if (srcs[idx].clip != null)
                     {

@@ -74,7 +74,7 @@ namespace OuterVoice
 
             if (string.IsNullOrEmpty(ja))
             {
-                ModHelper.Console.WriteLine("No mic selection in config!", MessageType.Info);
+                ModHelper.Console.WriteLine("No mic selected in config!", MessageType.Info);
                 return;
             }
 
@@ -310,19 +310,32 @@ namespace OuterVoice
 		{
             if (playerID == 1)
             {
-                foreach(var item in players)
-                {
+				foreach (var item in players.Values)
+				{
 					item.Cleanup();
 				}
-                players.Clear();
-                voiceBuffers.Clear();
+				players.Clear();
+
+				foreach (var entry in voiceBuffers.Values)
+				{
+					entry.Clear();
+				}
+				voiceBuffers.Clear();
             }
             else
             {
-                players[palyerID].Cleanup();
-                players.Remove(playerID);
-                voiceBuffers.Remove(playerID);
-            }
+				if (players.ContainsKey(playerID))
+				{
+					players[playerID].Cleanup();
+					players.Remove(playerID);
+				}
+
+				if (voiceBuffers.ContainsKey(playerID))
+				{
+					voiceBuffers[playerID].Clear();
+					voiceBuffers.Remove(playerID);
+				}
+			}
 		}
 
 		private IEnumerator WaitForLocalPlayerInitialization()

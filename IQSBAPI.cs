@@ -29,56 +29,31 @@ namespace OuterVoice
 
         #region Player
 
-        /// <summary>
-        /// Returns the player ID of the current player.
-        /// </summary>
         uint GetLocalPlayerID();
 
-        /// <summary>
-        /// Returns the name of a given player.
-        /// </summary>
-        /// <param name="playerID">The ID of the player you want the name of.</param>
         string GetPlayerName(uint playerID);
 
-        /// <summary>
         /// Returns the body object of a given player. The pivot of this object is at the player's feet.
-        /// </summary>
-        /// <param name="playerID">The ID of the player you want the body of.</param>
         GameObject GetPlayerBody(uint playerID);
 
-        /// <summary>
         /// Returns the camera object of a given player. The pivot of this object is at the player's point of view.
-        /// </summary>
-        /// <param name="playerID">The ID of the player you want the camera of.</param>
         GameObject GetPlayerCamera(uint playerID);
 
-        /// <summary>
         /// Returns true if a given player has fully loaded into the game. If the local player is still loading into the game, this will return false.
-        /// </summary>
-        /// <param name="playerID">The ID of the player.</param>
         bool GetPlayerReady(uint playerID);
 
-        /// <summary>
         /// Returns true if the given player is dead.
-        /// </summary>
-        /// <param name="playerID">The ID of the player.</param>
         bool GetPlayerDead(uint playerID);
 
-        /// <summary>
         /// Returns the list of IDs of all connected players.
         ///
         /// The first player in the list is the host.
-        /// </summary>
         uint[] GetPlayerIDs();
 
-        /// <summary>
         /// Invoked when any player (local or remote) joins the game.
-        /// </summary>
         UnityEvent<uint> OnPlayerJoin();
 
-        /// <summary>
         /// Invoked when any player (local or remote) leaves the game.
-        /// </summary>
         UnityEvent<uint> OnPlayerLeave();
 
         /// <summary>
