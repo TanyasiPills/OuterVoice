@@ -11,8 +11,6 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
-using Epic.OnlineServices;
-using Steamworks;
 
 namespace OuterVoice
 {
@@ -21,35 +19,31 @@ namespace OuterVoice
         public static OuterVoice Instance;
         public static IQSBAPI buddyApi;
 
-        private AudioClip audioClip;
         private float voiceVolume;
         private float micVolume;
         private float lastVoiceVolume = 0;
         private float lastMicVolume = 0;
 
 
-        private int freq = 22050;
-        private int chunkSize = 5512;
+        private int freq = 44000;
+        private int chunkSize = 22000;
         private double clipTime;
-        private double currentTime;
-        private double nextTime;
         private AudioClip clip;
-        [SerializeField] private string mic;
+        private string lastMic;
+        private string mic;
 
-        PlayerSource me;
+        PlayerSource myPlayer;
         List<float> myQueue = new List<float>();
 
         Camera camera;
 
-        Dictionary<uint, AudioSource> audioSources;
-
         uint myId = 999;
 
-        private Dictionary<uint, List<float>> voiceBuffers = new Dictionary<uint, List<float>>();
-        private Dictionary<uint, PlayerSource> players = new Dictionary<uint, PlayerSource>();
+        private bool micSet = false;
+        private bool ready = false;
 
-        bool running = false;
-        int srcNow = 0;    
+        private Dictionary<uint, List<float>> voiceBuffers = new Dictionary<uint, List<float>>();
+        private Dictionary<uint, PlayerSource> players = new Dictionary<uint, PlayerSource>();  
 
         public void Awake() { 
             Instance = this;
@@ -93,6 +87,8 @@ namespace OuterVoice
             {
                 mic = matchingMic;
                 ModHelper.Console.WriteLine($"Value: {mic}", MessageType.Success);
+                if(mic != lastMic) micSet = false;
+                lastMic = mic;
             }
             else
             {
@@ -113,7 +109,7 @@ namespace OuterVoice
 
             float newMicVolume = ModHelper.Config.GetSettingsValue<float>("Mic Volume");
 
-            if (newMicVolume != lastVoiceVolume)
+            if (newMicVolume != lastMicVolume)
             {
                 lastMicVolume = newMicVolume;
                 micVolume = newMicVolume / 500;
@@ -134,42 +130,39 @@ namespace OuterVoice
 
             Configure(config);
 
-            clipTime = (double)chunkSize / (double)freq;
-            audioSources = new Dictionary<uint, AudioSource>();
+            clipTime = chunkSize / freq;
             buddyApi = ModHelper.Interaction.TryGetModApi<IQSBAPI>("Raicuparta.QuantumSpaceBuddies");
             ModHelper.Console.WriteLine($"Swompy mompy, {nameof(OuterVoice)} is loaded!", MessageType.Success);
-
+            
             new Harmony("Maychii.OuterVoice").PatchAll(Assembly.GetExecutingAssembly());
-
-            OnCompleteSceneLoad(OWScene.TitleScreen, OWScene.TitleScreen);
             LoadManager.OnCompleteSceneLoad += OnCompleteSceneLoad;
         }
 
         private IEnumerator Record()
         {
-
+            ModHelper.Console.WriteLine("Started recoding");
             clip = Microphone.Start(mic, false, 999, freq);
+            micSet = true;
 
             while (Microphone.GetPosition(mic) < 0) yield return null;
 
             int lastPos = 0;
 
-            while (true)
+            while (micSet)
             {
                 yield return null;
                 int pos = Microphone.GetPosition(mic);
 
                 if (pos < lastPos) lastPos = 0;
 
-                if (pos != lastPos && pos - lastPos > 250)
+                if (pos != lastPos && pos - lastPos >= 8800)
                 {
 					int length = pos - lastPos;
 
 					float[] data = new float[length];
 					clip.GetData(data, lastPos);
 
-
-					if (data.Max() > 0.005f)
+					if (data.Max() > 0.01f)
 					{
 						Parallel.For(0, data.Length, i =>
 						{
@@ -208,22 +201,23 @@ namespace OuterVoice
         //debug purposes + fun
         private void RelaySelf(float[] data)
         {
-            if (me != null)
+            if (myPlayer != null)
             {
                 myQueue.AddRange(data);
-
-                if (myQueue.Count > chunkSize)
+                while (myQueue.Count > 0)
                 {
-                    float[] toVoice = myQueue.Take(chunkSize).ToArray();
-                    myQueue.RemoveRange(0, chunkSize);
-                    
-                    Parallel.For(0, toVoice.Length, i =>toVoice[i] = Mathf.Clamp(toVoice[i] * voiceVolume, -1.0f, 1.0f));
-                    
+                    float[] toVoice;
+                    int size = myQueue.Count % chunkSize;
+                    if(size == 0) size = chunkSize;
+                    toVoice = myQueue.Take(size).ToArray();
+                    myQueue.RemoveRange(0, size);
+
+                    Parallel.For(0, toVoice.Length, i => toVoice[i] = Mathf.Clamp(toVoice[i] * voiceVolume, -1.0f, 1.0f));
+
                     AudioClip clipToPlay = AudioClip.Create("clipike", toVoice.Length, 1, freq, false);
                     clipToPlay.SetData(toVoice, 0);
-                    me.AddToQueue(clipToPlay);
+                    myPlayer.AddToQueue(clipToPlay);
                 }
-
             }
         }
 
@@ -237,8 +231,15 @@ namespace OuterVoice
 
         private void Update()
         {
-            if (me != null) me.Play();
-            PlayVoices();
+            if (ready)
+            {
+                if (myPlayer != null)
+                {
+                    myPlayer.Play();
+                }
+                PlayVoices();
+                if(!micSet) StartCoroutine(Record());
+            }
 
             if (Keyboard.current[Key.J].wasPressedThisFrame)
             {
@@ -250,7 +251,9 @@ namespace OuterVoice
         private void SpawnAudioPlayer(Vector3 positionIn, Transform parentIn)
         {
             GameObject audioplayer = new GameObject("AudioPlayer");
-            me = new PlayerSource(audioplayer, clipTime);
+            myPlayer = audioplayer.AddComponent<PlayerSource>();
+            myPlayer.Initialize(audioplayer, clipTime);
+            ModHelper.Console.WriteLine("spawen audiopayer", MessageType.Message);
             audioplayer.transform.parent = parentIn;
         }
 
@@ -275,6 +278,8 @@ namespace OuterVoice
         public void OnCompleteSceneLoad(OWScene previousScene, OWScene newScene)
         {
             if (newScene != OWScene.SolarSystem) return;
+
+            ready = true;
 
             camera = Camera.main;
 
@@ -364,7 +369,7 @@ namespace OuterVoice
             while (!buddyApi.GetPlayerReady(id))
             {
                 ModHelper.Console.WriteLine($"Waiting for player[{id}] to be ready...", MessageType.Info);
-                yield return new WaitForSeconds(0.5f);
+                yield return new WaitForSeconds(1f);
             }
 
             GameObject player = buddyApi.GetPlayerBody(id);
@@ -375,7 +380,9 @@ namespace OuterVoice
                 yield break;
             }
 
-            players[id] = new PlayerSource(player, clipTime);
+            PlayerSource playerSource = player.AddComponent<PlayerSource>();
+            playerSource.Initialize(player, clipTime);
+            players[id] = playerSource;
         }      
     }
 }

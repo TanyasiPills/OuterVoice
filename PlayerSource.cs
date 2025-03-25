@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -17,9 +18,11 @@ namespace OuterVoice
         private double nextTime;
         private double clipTime;
 
+        public bool isInitialized = false;
+
         Queue<AudioClip> clips;
 
-        public PlayerSource(GameObject player, double clipTimeIn)
+        public void Initialize(GameObject player, double clipTimeIn)
         {
             running = false;
             idx = 0;
@@ -30,6 +33,8 @@ namespace OuterVoice
 
             clips = new Queue<AudioClip>();
             clipTime = clipTimeIn;
+
+            isInitialized = true;
         }
 
         public void AddToQueue(AudioClip clip)
@@ -73,19 +78,14 @@ namespace OuterVoice
         {
             if (!running)
             {
-                if (clips.Count > 0)
+                if (clips.Count > 1)
                 {
-                    currentTime = AudioSettings.dspTime;
-                    nextTime = currentTime + (clipTime/2.0f);
-
-                    if (srcs[idx].clip != null)
-                    {
-                        Destroy(srcs[idx].clip);
-                    }
                     srcs[idx].clip = clips.Dequeue();
-                    srcs[idx].PlayScheduled(nextTime);
+                    srcs[idx].PlayScheduled(AudioSettings.dspTime);
+                    StartCoroutine(FadeClip(srcs[idx], AudioSettings.dspTime));
 
-                    nextTime = nextTime + clipTime;
+                    float clipLength = (float)srcs[idx].clip.samples / srcs[idx].clip.frequency;
+                    nextTime = AudioSettings.dspTime + clipLength;
 
                     idx = (idx == 0) ? 1 : 0;
                     running = true;
@@ -94,19 +94,52 @@ namespace OuterVoice
             else
             {
                 currentTime = AudioSettings.dspTime;
-                if (currentTime + 0.05f > nextTime && clips.Count > 0)
+                if (currentTime + 0.02f > nextTime && clips.Count > 0)
                 {
                     srcs[idx].clip = clips.Dequeue();
                     srcs[idx].PlayScheduled(nextTime);
+                    StartCoroutine(FadeClip(srcs[idx], nextTime));
 
-                    nextTime = nextTime + clipTime;
+                    float clipLength = (float)srcs[idx].clip.samples / srcs[idx].clip.frequency;
+                    nextTime = nextTime + clipLength;
+
                     idx = (idx == 0) ? 1 : 0;
                 }
-                if (clips.Count < 1)
+                if (clips.Count < 1 && currentTime > nextTime)
                 {
                     running = false;
                 }
             }
+        }
+        private IEnumerator FadeClip(AudioSource source, double nextTime)
+        {
+            float startVolume = source.volume;
+            source.volume = 0;
+
+            double delay = nextTime - AudioSettings.dspTime;
+            yield return new WaitForSeconds((float)delay);
+
+            float fadeDuration = 0.1f;
+
+            for (float t = 0; t < fadeDuration; t += Time.deltaTime)
+            {
+                source.volume = Mathf.Lerp(0, startVolume, t / fadeDuration);
+                yield return null;
+            }
+
+            while (source.time / source.clip.length < 0.9f) yield return null;
+
+            fadeDuration = source.clip.length * 0.1f;
+
+            for (float t = 0; t < fadeDuration; t += Time.deltaTime)
+            {
+                source.volume = Mathf.Lerp(startVolume, 0, t / fadeDuration);
+                yield return null;
+            }
+
+            source.volume = 0;
+            Destroy(source.clip);
+            source.volume = startVolume;
         }
     }
 }
